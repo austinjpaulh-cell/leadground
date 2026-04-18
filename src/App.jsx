@@ -95,9 +95,8 @@ export default function App() {
 
   const card = {background:"#1e2535",border:"1px solid #2a3545",borderRadius:12,padding:isMobile?"12px 14px":"16px 18px"};
   const lbl = {fontSize:10,color:"#64748b",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:6,display:"block"};
-  const inp = {width:"100%",background:"#131825",border:"1px solid #2a3545",borderRadius:8,padding:"10px 12px",color:"#e2e8f0",fontSize:16,fontFamily:"inherit",boxSizing:"border-box",outline:"none"};
-  const btn = {background:"#22c55e",border:"none",borderRadius:8,padding:"10px 18px",color:"#fff",fontFamily:"inherit",fontSize:14,cursor:"pointer",fontWeight:500};
-  const ghost = {background:"#1e2535",border:"1px solid #2a3545",borderRadius:8,padding:"8px 12px",color:"#94a3b8",fontFamily:"inherit",fontSize:12,cursor:"pointer"};
+  const inpStyle = {width:"100%",background:"#131825",border:"1px solid #2a3545",borderRadius:8,padding:"10px 12px",color:"#e2e8f0",fontSize:16,fontFamily:"inherit",boxSizing:"border-box",outline:"none"};
+  const inpStyle = {width:"100%",background:"#131825",border:"1px solid #2a3545",borderRadius:8,padding:"10px 12px",color:"#e2e8f0",fontSize:16,fontFamily:"inherit",boxSizing:"border-box",outline:"none"};  const ghost = {background:"#1e2535",border:"1px solid #2a3545",borderRadius:8,padding:"8px 12px",color:"#94a3b8",fontFamily:"inherit",fontSize:12,cursor:"pointer"};
   const row = {display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #2a3545"};
   const p = isMobile ? "12px" : "24px";
 
@@ -205,7 +204,7 @@ export default function App() {
               {[["Source",fSource,setFSource,["All",...allSources]],["Service",fService,setFService,["All",...allServices]]].map(([lbl2,v,set,opts])=>(
                 <div key={lbl2} style={{display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontSize:11,color:"#64748b"}}>{lbl2}:</span>
-                  <select value={v} onChange={e=>set(e.target.value)} style={{...inp,width:"auto",padding:"6px 8px",fontSize:13}}>
+                  <select value={v} onChange={e=>set(e.target.value)} style={{...inpStyle,width:"auto",padding:"6px 8px",fontSize:13}}>
                     {opts.map(o=><option key={o}>{o}</option>)}
                   </select>
                 </div>
@@ -385,7 +384,7 @@ export default function App() {
                 <div ref={chatEnd}/>
               </div>
               <div style={{padding:12,borderTop:"1px solid #2a3545",display:"flex",gap:8}}>
-                <input value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendAi()} placeholder="Ask about your data..." style={{...inp,flex:1}}/>
+                <input value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendAi()} placeholder="Ask about your data..." style={{...inpStyle,flex:1}}/>
                 <button onClick={sendAi} disabled={aiLoading} style={btn}>Send</button>
               </div>
             </div>
