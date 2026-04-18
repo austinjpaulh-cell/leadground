@@ -13,7 +13,7 @@ export default function App() {
   const [fSource, setFSource] = useState("All");
   const [fService, setFService] = useState("All");
   const [msgs, setMsgs] = useState([{role:"assistant", content:"Hi! I have your live Square data. Ask me anything — \"Which lead source makes the most money?\", \"What's my average ticket?\", or \"Who are my top customers?\""}]);
-  const [inp, setInp] = useState("");
+  const [chatInput, setChatInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   const chatEnd = useRef(null);
@@ -76,8 +76,9 @@ export default function App() {
   });
 
   const sendAi = async () => {
-    if (!inp.trim() || aiLoading) return;
-    const q = inp.trim(); setInp("");
+    if (!chatInput.trim() || aiLoading) return;
+    const q = chatInput.trim();
+    setChatInput("");
     setMsgs(m => [...m, {role:"user", content:q}]);
     setAiLoading(true);
     const ctx = `You are a business intelligence assistant for Two Guys Energy Solutions, a home services company in Boise, Idaho. Real jobs data: ${JSON.stringify(jobs)}. Metrics: total jobs=${jobs.length}, revenue=${fmt(totalRevenue)}, avg ticket=${fmt(avgTicket)}, customers=${uniqueCustomers}. Answer under 150 words with specific numbers.`;
@@ -93,12 +94,13 @@ export default function App() {
     setAiLoading(false);
   };
 
-  const card = {background:"#1e2535",border:"1px solid #2a3545",borderRadius:12,padding:isMobile?"12px 14px":"16px 18px"};
-  const lbl = {fontSize:10,color:"#64748b",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:6,display:"block"};
-  const inpStyle = {width:"100%",background:"#131825",border:"1px solid #2a3545",borderRadius:8,padding:"10px 12px",color:"#e2e8f0",fontSize:16,fontFamily:"inherit",boxSizing:"border-box",outline:"none"};
-  const inpStyle = {width:"100%",background:"#131825",border:"1px solid #2a3545",borderRadius:8,padding:"10px 12px",color:"#e2e8f0",fontSize:16,fontFamily:"inherit",boxSizing:"border-box",outline:"none"};  const ghost = {background:"#1e2535",border:"1px solid #2a3545",borderRadius:8,padding:"8px 12px",color:"#94a3b8",fontFamily:"inherit",fontSize:12,cursor:"pointer"};
-  const row = {display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #2a3545"};
-  const p = isMobile ? "12px" : "24px";
+  const cardStyle = {background:"#1e2535",border:"1px solid #2a3545",borderRadius:12,padding:isMobile?"12px 14px":"16px 18px"};
+  const lblStyle = {fontSize:10,color:"#64748b",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:6,display:"block"};
+  const inputStyle = {width:"100%",background:"#131825",border:"1px solid #2a3545",borderRadius:8,padding:"10px 12px",color:"#e2e8f0",fontSize:16,fontFamily:"inherit",boxSizing:"border-box",outline:"none"};
+  const btnStyle = {background:"#22c55e",border:"none",borderRadius:8,padding:"10px 18px",color:"#fff",fontFamily:"inherit",fontSize:14,cursor:"pointer",fontWeight:500};
+  const ghostStyle = {background:"#1e2535",border:"1px solid #2a3545",borderRadius:8,padding:"8px 12px",color:"#94a3b8",fontFamily:"inherit",fontSize:12,cursor:"pointer"};
+  const rowStyle = {display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #2a3545"};
+  const pad = isMobile ? "12px" : "24px";
 
   const TABS = ["overview","jobs","sources","services","customers","ai insights"];
 
@@ -107,15 +109,13 @@ export default function App() {
       <div style={{width:44,height:44,background:"#22c55e",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>🌿</div>
       <div style={{fontSize:15}}>Loading your live data...</div>
       {syncError && <div style={{fontSize:13,color:"#ef4444",textAlign:"center",padding:"0 20px"}}>{syncError}</div>}
-      <button onClick={fetchData} style={{...ghost,marginTop:8}}>Try Again</button>
+      <button onClick={fetchData} style={{...ghostStyle,marginTop:8}}>Try Again</button>
     </div>
   );
 
   return (
     <div style={{fontFamily:"system-ui,sans-serif",background:"#0f1117",minHeight:"100vh",color:"#e2e8f0"}}>
-
-      {/* Header */}
-      <div style={{background:"#0a0d14",borderBottom:"1px solid #1e2535",padding:`12px ${p}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+      <div style={{background:"#0a0d14",borderBottom:"1px solid #1e2535",padding:`12px ${pad}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{width:32,height:32,background:"#22c55e",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🌿</div>
           <div>
@@ -125,13 +125,12 @@ export default function App() {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {lastSync && !isMobile && <span style={{fontSize:11,color:"#64748b"}}>Updated {lastSync.toLocaleTimeString()}</span>}
-          <button onClick={fetchData} style={{...ghost,fontSize:11,padding:"6px 10px"}}>↻ {isMobile?"":"Refresh"}</button>
+          <button onClick={fetchData} style={{...ghostStyle,fontSize:11,padding:"6px 10px"}}>↻ {isMobile?"":"Refresh"}</button>
         </div>
       </div>
 
       {syncError && <div style={{background:"#ef444422",padding:"8px 20px",fontSize:12,color:"#ef4444"}}>{syncError}</div>}
 
-      {/* Tabs */}
       <div style={{background:"#0a0d14",borderBottom:"1px solid #1e2535",display:"flex",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
         {TABS.map(t => (
           <button key={t} onClick={()=>setTab(t)} style={{background:"none",border:"none",borderBottom:tab===t?"2px solid #22c55e":"2px solid transparent",color:tab===t?"#22c55e":"#64748b",padding:isMobile?"10px 12px":"11px 16px",fontSize:isMobile?10:11,letterSpacing:"0.06em",textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0}}>
@@ -140,9 +139,8 @@ export default function App() {
         ))}
       </div>
 
-      <div style={{padding:p,maxWidth:1200,margin:"0 auto"}}>
+      <div style={{padding:pad,maxWidth:1200,margin:"0 auto"}}>
 
-        {/* OVERVIEW */}
         {tab === "overview" && (
           <div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
@@ -152,20 +150,20 @@ export default function App() {
                 {label:"Avg Ticket",val:fmt(avgTicket),sub:"per job",color:"#8b5cf6"},
                 {label:"Customers",val:uniqueCustomers,sub:"unique",color:"#f59e0b"},
               ].map(({label,val,sub,color})=>(
-                <div key={label} style={card}>
-                  <div style={lbl}>{label}</div>
+                <div key={label} style={cardStyle}>
+                  <div style={lblStyle}>{label}</div>
                   <div style={{fontSize:isMobile?20:24,fontWeight:600,color}}>{val}</div>
                   <div style={{fontSize:11,color:"#64748b",marginTop:4}}>{sub}</div>
                 </div>
               ))}
             </div>
             <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
-              <div style={card}>
-                <div style={{...lbl,marginBottom:12}}>Revenue by Lead Source</div>
+              <div style={cardStyle}>
+                <div style={{...lblStyle,marginBottom:12}}>Revenue by Lead Source</div>
                 {sourceStats.length === 0
-                  ? <div style={{fontSize:13,color:"#64748b"}}>No source data yet — assign customers to groups in Square</div>
+                  ? <div style={{fontSize:13,color:"#64748b"}}>No source data yet</div>
                   : sourceStats.map(({src,jobs:j,revenue,avg})=>(
-                    <div key={src} style={row}>
+                    <div key={src} style={rowStyle}>
                       <div style={{flex:1,minWidth:0,marginRight:12}}>
                         <div style={{fontSize:13,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{src}</div>
                         <div style={{fontSize:11,color:"#64748b"}}>{j} jobs · {fmt(revenue)}</div>
@@ -178,12 +176,12 @@ export default function App() {
                   ))
                 }
               </div>
-              <div style={card}>
-                <div style={{...lbl,marginBottom:12}}>Top Services by Avg Ticket</div>
+              <div style={cardStyle}>
+                <div style={{...lblStyle,marginBottom:12}}>Top Services by Avg Ticket</div>
                 {serviceStats.length === 0
                   ? <div style={{fontSize:13,color:"#64748b"}}>No service data yet</div>
                   : serviceStats.slice(0,6).map(({svc,jobs:j,avg})=>(
-                    <div key={svc} style={row}>
+                    <div key={svc} style={rowStyle}>
                       <div style={{flex:1,minWidth:0,marginRight:12}}>
                         <div style={{fontSize:13,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{svc}</div>
                         <div style={{fontSize:11,color:"#64748b"}}>{j} jobs</div>
@@ -197,14 +195,13 @@ export default function App() {
           </div>
         )}
 
-        {/* JOBS */}
         {tab === "jobs" && (
           <div>
             <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
               {[["Source",fSource,setFSource,["All",...allSources]],["Service",fService,setFService,["All",...allServices]]].map(([lbl2,v,set,opts])=>(
                 <div key={lbl2} style={{display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontSize:11,color:"#64748b"}}>{lbl2}:</span>
-                  <select value={v} onChange={e=>set(e.target.value)} style={{...inpStyle,width:"auto",padding:"6px 8px",fontSize:13}}>
+                  <select value={v} onChange={e=>set(e.target.value)} style={{...inputStyle,width:"auto",padding:"6px 8px",fontSize:13}}>
                     {opts.map(o=><option key={o}>{o}</option>)}
                   </select>
                 </div>
@@ -214,8 +211,8 @@ export default function App() {
             {isMobile ? (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {filtered.map((j,i)=>(
-                  <div key={i} style={card}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                  <div key={i} style={cardStyle}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
                       <div style={{fontWeight:600,color:"#e2e8f0",fontSize:14}}>{j["Customer Name"]}</div>
                       <div style={{color:"#22c55e",fontWeight:600,fontSize:15}}>{fmt(j["Payment Amount"])}</div>
                     </div>
@@ -226,10 +223,10 @@ export default function App() {
                     </div>
                   </div>
                 ))}
-                {filtered.length === 0 && <div style={{...card,textAlign:"center",color:"#64748b"}}>No jobs match your filters</div>}
+                {filtered.length === 0 && <div style={{...cardStyle,textAlign:"center",color:"#64748b"}}>No jobs match filters</div>}
               </div>
             ) : (
-              <div style={{...card,padding:0,overflow:"auto"}}>
+              <div style={{...cardStyle,padding:0,overflow:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{borderBottom:"1px solid #2a3545"}}>
@@ -250,27 +247,26 @@ export default function App() {
                     ))}
                   </tbody>
                 </table>
-                {filtered.length === 0 && <div style={{padding:24,textAlign:"center",color:"#64748b"}}>No jobs match your filters</div>}
+                {filtered.length === 0 && <div style={{padding:24,textAlign:"center",color:"#64748b"}}>No jobs match filters</div>}
               </div>
             )}
           </div>
         )}
 
-        {/* SOURCES */}
         {tab === "sources" && (
           <div>
             {sourceStats.length === 0
-              ? <div style={{...card,textAlign:"center",padding:48,color:"#64748b"}}>No source data yet. Assign customers to groups in Square.</div>
+              ? <div style={{...cardStyle,textAlign:"center",padding:48,color:"#64748b"}}>No source data yet. Assign customers to groups in Square.</div>
               : <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,minmax(0,1fr))",gap:14}}>
                 {sourceStats.map(({src,jobs:j,revenue,avg})=>{
                   const pct = sourceStats[0].revenue ? Math.round(revenue/sourceStats[0].revenue*100) : 0;
                   return (
-                    <div key={src} style={card}>
+                    <div key={src} style={cardStyle}>
                       <div style={{fontWeight:600,fontSize:14,color:"#f1f5f9",marginBottom:12}}>{src}</div>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-                        <div><div style={lbl}>Jobs</div><div style={{fontSize:22,fontWeight:600,color:"#3b82f6"}}>{j}</div></div>
-                        <div><div style={lbl}>Avg Ticket</div><div style={{fontSize:22,fontWeight:600,color:"#22c55e"}}>{fmt(avg)}</div></div>
-                        <div style={{gridColumn:"1/-1"}}><div style={lbl}>Total Revenue</div><div style={{fontSize:18,fontWeight:500,color:"#e2e8f0"}}>{fmt(revenue)}</div></div>
+                        <div><div style={lblStyle}>Jobs</div><div style={{fontSize:22,fontWeight:600,color:"#3b82f6"}}>{j}</div></div>
+                        <div><div style={lblStyle}>Avg Ticket</div><div style={{fontSize:22,fontWeight:600,color:"#22c55e"}}>{fmt(avg)}</div></div>
+                        <div style={{gridColumn:"1/-1"}}><div style={lblStyle}>Total Revenue</div><div style={{fontSize:18,fontWeight:500,color:"#e2e8f0"}}>{fmt(revenue)}</div></div>
                       </div>
                       <div style={{background:"#131825",borderRadius:4,height:5}}>
                         <div style={{height:"100%",width:pct+"%",background:"#22c55e",borderRadius:4}}/>
@@ -284,21 +280,20 @@ export default function App() {
           </div>
         )}
 
-        {/* SERVICES */}
         {tab === "services" && (
           <div>
             {serviceStats.length === 0
-              ? <div style={{...card,textAlign:"center",padding:48,color:"#64748b"}}>No service data yet.</div>
+              ? <div style={{...cardStyle,textAlign:"center",padding:48,color:"#64748b"}}>No service data yet.</div>
               : <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,minmax(0,1fr))",gap:14}}>
                 {serviceStats.map(({svc,jobs:j,revenue,avg})=>{
                   const pct = serviceStats[0].avg ? Math.round(avg/serviceStats[0].avg*100) : 0;
                   return (
-                    <div key={svc} style={card}>
+                    <div key={svc} style={cardStyle}>
                       <div style={{fontWeight:600,fontSize:14,color:"#f1f5f9",marginBottom:12}}>{svc}</div>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-                        <div><div style={lbl}>Jobs</div><div style={{fontSize:22,fontWeight:600,color:"#3b82f6"}}>{j}</div></div>
-                        <div><div style={lbl}>Avg Ticket</div><div style={{fontSize:22,fontWeight:600,color:"#8b5cf6"}}>{fmt(avg)}</div></div>
-                        <div style={{gridColumn:"1/-1"}}><div style={lbl}>Total Revenue</div><div style={{fontSize:18,fontWeight:500,color:"#e2e8f0"}}>{fmt(revenue)}</div></div>
+                        <div><div style={lblStyle}>Jobs</div><div style={{fontSize:22,fontWeight:600,color:"#3b82f6"}}>{j}</div></div>
+                        <div><div style={lblStyle}>Avg Ticket</div><div style={{fontSize:22,fontWeight:600,color:"#8b5cf6"}}>{fmt(avg)}</div></div>
+                        <div style={{gridColumn:"1/-1"}}><div style={lblStyle}>Total Revenue</div><div style={{fontSize:18,fontWeight:500,color:"#e2e8f0"}}>{fmt(revenue)}</div></div>
                       </div>
                       <div style={{background:"#131825",borderRadius:4,height:5}}>
                         <div style={{height:"100%",width:pct+"%",background:"#8b5cf6",borderRadius:4}}/>
@@ -312,14 +307,13 @@ export default function App() {
           </div>
         )}
 
-        {/* CUSTOMERS */}
         {tab === "customers" && (
           <div>
             {isMobile ? (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {customerLTV.map((c,i)=>(
-                  <div key={c.name} style={card}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                  <div key={c.name} style={cardStyle}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
                       <div style={{fontWeight:600,color:"#e2e8f0",fontSize:14}}>{c.name}</div>
                       <div style={{color:"#22c55e",fontWeight:600,fontSize:15}}>{fmt(c.total)}</div>
                     </div>
@@ -330,10 +324,10 @@ export default function App() {
                     </div>
                   </div>
                 ))}
-                {customerLTV.length === 0 && <div style={{...card,textAlign:"center",color:"#64748b"}}>No customer data yet</div>}
+                {customerLTV.length === 0 && <div style={{...cardStyle,textAlign:"center",color:"#64748b"}}>No customer data yet</div>}
               </div>
             ) : (
-              <div style={{...card,padding:0,overflow:"auto"}}>
+              <div style={{...cardStyle,padding:0,overflow:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{borderBottom:"1px solid #2a3545"}}>
@@ -361,10 +355,9 @@ export default function App() {
           </div>
         )}
 
-        {/* AI INSIGHTS */}
         {tab === "ai insights" && (
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 260px",gap:14}}>
-            <div style={{...card,display:"flex",flexDirection:"column",height:isMobile?"70vh":"500px",padding:0}}>
+            <div style={{...cardStyle,display:"flex",flexDirection:"column",height:isMobile?"70vh":"500px",padding:0}}>
               <div style={{padding:"12px 16px",borderBottom:"1px solid #2a3545",fontSize:10,color:"#64748b",letterSpacing:"0.07em",textTransform:"uppercase"}}>
                 ⚡ AI Insights · {jobs.length} jobs loaded
               </div>
@@ -384,15 +377,15 @@ export default function App() {
                 <div ref={chatEnd}/>
               </div>
               <div style={{padding:12,borderTop:"1px solid #2a3545",display:"flex",gap:8}}>
-                <input value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendAi()} placeholder="Ask about your data..." style={{...inpStyle,flex:1}}/>
-                <button onClick={sendAi} disabled={aiLoading} style={btn}>Send</button>
+                <input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendAi()} placeholder="Ask about your data..." style={{...inputStyle,flex:1}}/>
+                <button onClick={sendAi} disabled={aiLoading} style={btnStyle}>Send</button>
               </div>
             </div>
             {!isMobile && (
-              <div style={card}>
-                <div style={{...lbl,marginBottom:14}}>Try Asking</div>
+              <div style={cardStyle}>
+                <div style={{...lblStyle,marginBottom:14}}>Try Asking</div>
                 {["Which lead source makes the most money?","What's my average ticket?","Who are my top customers by LTV?","Which service has the highest avg ticket?","What's my total revenue?","How many jobs completed?"].map((q,i)=>(
-                  <button key={i} onClick={()=>setInp(q)} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"1px solid #2a3545",borderRadius:8,padding:"8px 10px",color:"#94a3b8",fontSize:11,cursor:"pointer",marginBottom:8,fontFamily:"inherit",lineHeight:1.5}}>{q}</button>
+                  <button key={i} onClick={()=>setChatInput(q)} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"1px solid #2a3545",borderRadius:8,padding:"8px 10px",color:"#94a3b8",fontSize:11,cursor:"pointer",marginBottom:8,fontFamily:"inherit",lineHeight:1.5}}>{q}</button>
                 ))}
               </div>
             )}
