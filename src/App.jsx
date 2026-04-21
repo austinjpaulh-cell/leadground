@@ -3,9 +3,11 @@ import { useState, useEffect, useRef } from "react";
 const JSONBIN_URL = "https://api.jsonbin.io/v3/b/69e3fe8a856a6821894b16fe/latest";
 const fmt = n => "$" + Math.round(Number(n) || 0).toLocaleString();
 const fmtDate = d => { try { return new Date(d).toLocaleDateString(); } catch { return d; } };
+const fmtDateShort = d => { try { return new Date(d).toLocaleDateString("en-US", {month:"short", day:"numeric"}); } catch { return d; } };
 
 export default function App() {
   const [jobs, setJobs] = useState([]);
+  const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastSync, setLastSync] = useState(null);
   const [syncError, setSyncError] = useState("");
@@ -34,7 +36,9 @@ export default function App() {
       if (!r.ok) throw new Error("Failed");
       const data = await r.json();
       const jobList = Array.isArray(data) ? data : (data.jobs || []);
+      const apptList = Array.isArray(data) ? [] : (data.appointments || []);
       setJobs(jobList);
+      setAppointments(apptList);
       setLastSync(new Date());
     } catch(e) {
       setSyncError("Could not load data. Try refreshing.");
@@ -47,6 +51,24 @@ export default function App() {
   const totalRevenue = jobs.reduce((s, j) => s + (Number(j["Payment Amount"]) || 0), 0);
   const avgTicket = jobs.length ? totalRevenue / jobs.length : 0;
   const uniqueCustomers = [...new Set(jobs.map(j => j["Customer Name"]))].length;
+
+  // Upcoming appointment derivations
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const futureAppointments = appointments
+    .filter(a => {
+      if (!a["Date"]) return false;
+      const d = new Date(a["Date"]);
+      if (isNaN(d)) return false;
+      if (d < todayStart) return false;
+      const status = (a["Status"] || "").toLowerCase();
+      if (status === "cancelled" || status === "canceled" || status === "no_show") return false;
+      return true;
+    })
+    .sort((a, b) => new Date(a["Date"]) - new Date(b["Date"]));
+
+  const weekEnd = new Date(todayStart); weekEnd.setDate(weekEnd.getDate() + 7);
+  const thisWeekAppointments = futureAppointments.filter(a => new Date(a["Date"]) < weekEnd);
+  const projectedWeekRevenue = thisWeekAppointments.reduce((s, a) => s + (Number(a["Estimated Value"]) || 0), 0);
 
   const sourceStats = [...new Set(jobs.map(j => j["Lead Source"]).filter(Boolean))].map(src => {
     const group = jobs.filter(j => j["Lead Source"] === src);
@@ -81,7 +103,7 @@ export default function App() {
     setChatInput("");
     setMsgs(m => [...m, {role:"user", content:q}]);
     setAiLoading(true);
-    const ctx = `You are a business intelligence assistant for Two Guys Energy Solutions, a home services company in Boise, Idaho. Real jobs data: ${JSON.stringify(jobs)}. Metrics: total jobs=${jobs.length}, revenue=${fmt(totalRevenue)}, avg ticket=${fmt(avgTicket)}, customers=${uniqueCustomers}. Answer under 150 words with specific numbers.`;
+    const ctx = `You are a business intelligence assistant for Two Guys Energy Solutions, a home services company in Boise, Idaho. Completed jobs data: ${JSON.stringify(jobs)}. Upcoming appointments: ${JSON.stringify(futureAppointments)}. Metrics: total jobs=${jobs.length}, revenue=${fmt(totalRevenue)}, avg ticket=${fmt(avgTicket)}, customers=${uniqueCustomers}, upcoming this week=${thisWeekAppointments.length}, projected week revenue=${fmt(projectedWeekRevenue)}. Answer under 150 words with specific numbers.`;
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST", headers:{"Content-Type":"application/json"},
@@ -102,7 +124,7 @@ export default function App() {
   const rowStyle = {display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #2a3545"};
   const pad = isMobile ? "12px" : "24px";
 
-  const TABS = ["overview","jobs","sources","services","customers","ai insights"];
+  const TABS = ["overview","jobs","upcoming","sources","services","customers","ai insights"];
 
   if (loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:12,fontFamily:"system-ui",background:"#0f1117",color:"#e2e8f0"}}>
@@ -157,6 +179,38 @@ export default function App() {
                 </div>
               ))}
             </div>
+
+            {/* Upcoming this week summary card */}
+            <div style={{...cardStyle, marginBottom:14, cursor:"pointer"}} onClick={()=>setTab("upcoming")}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:isMobile?"flex-start":"center",flexDirection:isMobile?"column":"row",gap:isMobile?10:20}}>
+                <div>
+                  <div style={lblStyle}>Upcoming This Week</div>
+                  <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap"}}>
+                    <div>
+                      <span style={{fontSize:isMobile?22:26,fontWeight:600,color:"#f59e0b"}}>{thisWeekAppointments.length}</span>
+                      <span style={{fontSize:12,color:"#64748b",marginLeft:6}}>appointment{thisWeekAppointments.length===1?"":"s"}</span>
+                    </div>
+                    <div style={{color:"#64748b"}}>·</div>
+                    <div>
+                      <span style={{fontSize:isMobile?18:22,fontWeight:500,color:"#22c55e"}}>{fmt(projectedWeekRevenue)}</span>
+                      <span style={{fontSize:12,color:"#64748b",marginLeft:6}}>projected</span>
+                    </div>
+                  </div>
+                </div>
+                {thisWeekAppointments.length > 0 && (
+                  <div style={{fontSize:11,color:"#94a3b8",textAlign:isMobile?"left":"right"}}>
+                    Next: {thisWeekAppointments[0]["Customer Name"]} · {fmtDateShort(thisWeekAppointments[0]["Date"])} {thisWeekAppointments[0]["Time"]||""}
+                  </div>
+                )}
+                {thisWeekAppointments.length === 0 && (
+                  <div style={{fontSize:12,color:"#64748b"}}>No appointments scheduled</div>
+                )}
+              </div>
+              <div style={{fontSize:10,color:"#64748b",marginTop:10,letterSpacing:"0.06em",textTransform:"uppercase"}}>
+                Tap to view all upcoming →
+              </div>
+            </div>
+
             <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
               <div style={cardStyle}>
                 <div style={{...lblStyle,marginBottom:12}}>Revenue by Lead Source</div>
@@ -248,6 +302,60 @@ export default function App() {
                   </tbody>
                 </table>
                 {filtered.length === 0 && <div style={{padding:24,textAlign:"center",color:"#64748b"}}>No jobs match filters</div>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "upcoming" && (
+          <div>
+            <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:11,color:"#64748b"}}>{futureAppointments.length} upcoming · {fmt(futureAppointments.reduce((s,a)=>s+(Number(a["Estimated Value"])||0),0))} projected</span>
+            </div>
+            {futureAppointments.length === 0 ? (
+              <div style={{...cardStyle,textAlign:"center",padding:48,color:"#64748b"}}>
+                No upcoming appointments.<br/>
+                <span style={{fontSize:11,marginTop:8,display:"inline-block"}}>New bookings from Square will appear here automatically.</span>
+              </div>
+            ) : isMobile ? (
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {futureAppointments.map((a,i)=>(
+                  <div key={a["Appointment ID"]||i} style={cardStyle}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                      <div style={{fontWeight:600,color:"#e2e8f0",fontSize:14}}>{a["Customer Name"]}</div>
+                      <div style={{color:"#22c55e",fontWeight:600,fontSize:15}}>{fmt(a["Estimated Value"])}</div>
+                    </div>
+                    <div style={{fontSize:12,color:"#94a3b8",marginBottom:4}}>{a["Service"]}</div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#64748b"}}>
+                      <span>{a["Lead Source"]||"—"}</span>
+                      <span style={{color:"#f59e0b"}}>{fmtDateShort(a["Date"])} {a["Time"]||""}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{...cardStyle,padding:0,overflow:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{borderBottom:"1px solid #2a3545"}}>
+                      {["Date","Time","Customer","Service","Lead Source","Est. Value"].map(h=>(
+                        <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,color:"#64748b",letterSpacing:"0.07em",textTransform:"uppercase",fontWeight:500,whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {futureAppointments.map((a,i)=>(
+                      <tr key={a["Appointment ID"]||i} style={{borderBottom:"1px solid #1e2535",background:i%2===0?"transparent":"#131825"}}>
+                        <td style={{padding:"10px 14px",color:"#f59e0b",whiteSpace:"nowrap",fontWeight:500}}>{fmtDateShort(a["Date"])}</td>
+                        <td style={{padding:"10px 14px",color:"#94a3b8",whiteSpace:"nowrap"}}>{a["Time"]||"—"}</td>
+                        <td style={{padding:"10px 14px",fontWeight:500,color:"#e2e8f0"}}>{a["Customer Name"]}</td>
+                        <td style={{padding:"10px 14px",color:"#94a3b8"}}>{a["Service"]}</td>
+                        <td style={{padding:"10px 14px",color:"#94a3b8"}}>{a["Lead Source"]||"—"}</td>
+                        <td style={{padding:"10px 14px",color:"#22c55e",fontWeight:500}}>{fmt(a["Estimated Value"])}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -359,7 +467,7 @@ export default function App() {
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 260px",gap:14}}>
             <div style={{...cardStyle,display:"flex",flexDirection:"column",height:isMobile?"70vh":"500px",padding:0}}>
               <div style={{padding:"12px 16px",borderBottom:"1px solid #2a3545",fontSize:10,color:"#64748b",letterSpacing:"0.07em",textTransform:"uppercase"}}>
-                ⚡ AI Insights · {jobs.length} jobs loaded
+                ⚡ AI Insights · {jobs.length} jobs · {futureAppointments.length} upcoming
               </div>
               <div style={{flex:1,overflowY:"auto",padding:14,display:"flex",flexDirection:"column",gap:12}}>
                 {msgs.map((m,i)=>(
@@ -384,7 +492,7 @@ export default function App() {
             {!isMobile && (
               <div style={cardStyle}>
                 <div style={{...lblStyle,marginBottom:14}}>Try Asking</div>
-                {["Which lead source makes the most money?","What's my average ticket?","Who are my top customers by LTV?","Which service has the highest avg ticket?","What's my total revenue?","How many jobs completed?"].map((q,i)=>(
+                {["Which lead source makes the most money?","What's my average ticket?","Who are my top customers by LTV?","Which service has the highest avg ticket?","What's my total revenue?","How many jobs completed?","What's projected for this week?","Who's booked next?"].map((q,i)=>(
                   <button key={i} onClick={()=>setChatInput(q)} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"1px solid #2a3545",borderRadius:8,padding:"8px 10px",color:"#94a3b8",fontSize:11,cursor:"pointer",marginBottom:8,fontFamily:"inherit",lineHeight:1.5}}>{q}</button>
                 ))}
               </div>
