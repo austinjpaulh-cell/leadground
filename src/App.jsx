@@ -5,6 +5,54 @@ const fmt = n => "$" + Math.round(Number(n) || 0).toLocaleString();
 const fmtDate = d => { try { return new Date(d).toLocaleDateString(); } catch { return d; } };
 const fmtDateShort = d => { try { return new Date(d).toLocaleDateString("en-US", {month:"short", day:"numeric"}); } catch { return d; } };
 
+// === Time period helpers ===
+function getPeriodRange(period) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (period === "all") {
+    return { start: null, end: null, label: "All Time", name: "all" };
+  }
+  if (period === "week") {
+    const dayOfWeek = today.getDay();
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - daysFromMonday);
+    const nextMonday = new Date(monday);
+    nextMonday.setDate(monday.getDate() + 7);
+    return { start: monday, end: nextMonday, label: "This Week", name: "week" };
+  }
+  if (period === "month") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return { start, end, label: "This Month", name: "month" };
+  }
+  if (period === "quarter") {
+    const q = Math.floor(now.getMonth() / 3);
+    const start = new Date(now.getFullYear(), q * 3, 1);
+    const end = new Date(now.getFullYear(), q * 3 + 3, 1);
+    const qNum = q + 1;
+    return { start, end, label: `This Quarter (Q${qNum})`, name: "quarter" };
+  }
+  return { start: null, end: null, label: "All Time", name: "all" };
+}
+
+function daysIntoPeriod(range) {
+  if (!range.start) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.floor((today - range.start) / (1000 * 60 * 60 * 24)) + 1;
+  return diff;
+}
+
+function isInRange(dateStr, range) {
+  if (!range.start || !range.end) return true;
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return false;
+  return d >= range.start && d < range.end;
+}
+
 export default function App() {
   const [jobs, setJobs] = useState([]);
   const [appointments, setAppointments] = useState([]);
@@ -12,6 +60,7 @@ export default function App() {
   const [lastSync, setLastSync] = useState(null);
   const [syncError, setSyncError] = useState("");
   const [tab, setTab] = useState("overview");
+  const [period, setPeriod] = useState("all");
   const [fSource, setFSource] = useState("All");
   const [fService, setFService] = useState("All");
   const [msgs, setMsgs] = useState([{role:"assistant", content:"Hi! I have your live Square data. Ask me anything — \"Which lead source makes the most money?\", \"What's my average ticket?\", or \"Who are my top customers?\""}]);
@@ -48,54 +97,85 @@ export default function App() {
 
   useEffect(() => { fetchData(); }, []);
 
-  const totalRevenue = jobs.reduce((s, j) => s + (Number(j["Payment Amount"]) || 0), 0);
-  const avgTicket = jobs.length ? totalRevenue / jobs.length : 0;
-  const uniqueCustomers = [...new Set(jobs.map(j => j["Customer Name"]))].length;
+  const periodRange = getPeriodRange(period);
+  const periodActive = period !== "all";
+  const daysIn = daysIntoPeriod(periodRange);
 
-  // Upcoming appointment derivations
+  const periodJobs = jobs.filter(j => isInRange(j["Date"], periodRange));
+
+  const totalRevenue = periodJobs.reduce((s, j) => s + (Number(j["Payment Amount"]) || 0), 0);
+  const avgTicket = periodJobs.length ? totalRevenue / periodJobs.length : 0;
+  const uniqueCustomers = [...new Set(periodJobs.map(j => j["Customer Name"]).filter(Boolean))].length;
+
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const futureAppointments = appointments
+  const allFutureAppointments = appointments
     .filter(a => {
       if (!a["Date"]) return false;
       const d = new Date(a["Date"]);
       if (isNaN(d)) return false;
       if (d < todayStart) return false;
       const status = (a["Status"] || "").toLowerCase();
-      if (status === "cancelled" || status === "canceled" || status === "no_show") return false;
+      if (status === "cancelled" || status === "canceled" || status === "no_show"
+          || status === "cancelled_by_customer" || status === "cancelled_by_seller"
+          || status === "declined") return false;
       return true;
     })
     .sort((a, b) => new Date(a["Date"]) - new Date(b["Date"]));
 
-  const weekEnd = new Date(todayStart); weekEnd.setDate(weekEnd.getDate() + 7);
-  const thisWeekAppointments = futureAppointments.filter(a => new Date(a["Date"]) < weekEnd);
-  const projectedWeekRevenue = thisWeekAppointments.reduce((s, a) => s + (Number(a["Estimated Value"]) || 0), 0);
+  const upcomingPeriodRange = (period === "quarter" || period === "all") ? null : periodRange;
+  const futureAppointments = upcomingPeriodRange
+    ? allFutureAppointments.filter(a => isInRange(a["Date"], upcomingPeriodRange))
+    : allFutureAppointments;
 
-  const sourceStats = [...new Set(jobs.map(j => j["Lead Source"]).filter(Boolean))].map(src => {
-    const group = jobs.filter(j => j["Lead Source"] === src);
+  const weekRange = getPeriodRange("week");
+  const thisWeekAppointments = allFutureAppointments.filter(a => isInRange(a["Date"], weekRange));
+  const projectedWeekRevenue = thisWeekAppointments.reduce((s, a) => s + (Number(a["Estimated Value"]) || 0), 0);
+  const weekHasEstimates = thisWeekAppointments.some(a => a["Is Estimated"]);
+
+  const monthRange = getPeriodRange("month");
+  const thisMonthAppointments = allFutureAppointments.filter(a => isInRange(a["Date"], monthRange));
+  const projectedMonthRevenue = thisMonthAppointments.reduce((s, a) => s + (Number(a["Estimated Value"]) || 0), 0);
+  const monthHasEstimates = thisMonthAppointments.some(a => a["Is Estimated"]);
+
+  const sourceStats = [...new Set(periodJobs.map(j => j["Lead Source"]).filter(Boolean))].map(src => {
+    const group = periodJobs.filter(j => j["Lead Source"] === src);
     const rev = group.reduce((s, j) => s + (Number(j["Payment Amount"]) || 0), 0);
     return { src, jobs: group.length, revenue: rev, avg: group.length ? rev / group.length : 0 };
   }).sort((a, b) => b.revenue - a.revenue);
 
-  const serviceStats = [...new Set(jobs.map(j => j["Service"]).filter(Boolean))].map(svc => {
-    const group = jobs.filter(j => j["Service"] === svc);
+  const serviceStats = [...new Set(periodJobs.map(j => j["Service"]).filter(Boolean))].map(svc => {
+    const group = periodJobs.filter(j => j["Service"] === svc);
     const rev = group.reduce((s, j) => s + (Number(j["Payment Amount"]) || 0), 0);
     return { svc, jobs: group.length, revenue: rev, avg: group.length ? rev / group.length : 0 };
   }).sort((a, b) => b.avg - a.avg);
 
-  const customerLTV = [...new Set(jobs.map(j => j["Customer Name"]).filter(Boolean))].map(name => {
-    const group = jobs.filter(j => j["Customer Name"] === name);
+  const customerLTV = [...new Set(periodJobs.map(j => j["Customer Name"]).filter(Boolean))].map(name => {
+    const group = periodJobs.filter(j => j["Customer Name"] === name);
     const total = group.reduce((s, j) => s + (Number(j["Payment Amount"]) || 0), 0);
     const lastJob = group[group.length - 1];
     return { name, jobs: group.length, total, source: group[0]?.["Lead Source"] || "—", lastService: lastJob?.["Service"] || "", lastDate: lastJob?.["Date"] || "" };
   }).sort((a, b) => b.total - a.total);
 
-  const allSources = [...new Set(jobs.map(j => j["Lead Source"]).filter(Boolean))];
-  const allServices = [...new Set(jobs.map(j => j["Service"]).filter(Boolean))];
-  const filtered = jobs.filter(j => {
+  const allSources = [...new Set(periodJobs.map(j => j["Lead Source"]).filter(Boolean))];
+  const allServices = [...new Set(periodJobs.map(j => j["Service"]).filter(Boolean))];
+  const filtered = periodJobs.filter(j => {
     if (fSource !== "All" && j["Lead Source"] !== fSource) return false;
     if (fService !== "All" && j["Service"] !== fService) return false;
     return true;
   });
+
+  const renderValue = (a, color) => {
+    const val = Number(a["Estimated Value"]) || 0;
+    const isEst = a["Is Estimated"];
+    if (val === 0) {
+      return <span style={{color:"#64748b",fontWeight:500}} title="No price data available">—</span>;
+    }
+    return (
+      <span style={{color,fontWeight:500}} title={a["Estimate Source"] ? `Source: ${a["Estimate Source"]}` : ""}>
+        {isEst ? "~" : ""}{fmt(val)}{isEst ? <span style={{color:"#64748b",fontSize:"0.85em",marginLeft:3,fontWeight:400}}> est</span> : ""}
+      </span>
+    );
+  };
 
   const sendAi = async () => {
     if (!chatInput.trim() || aiLoading) return;
@@ -103,7 +183,7 @@ export default function App() {
     setChatInput("");
     setMsgs(m => [...m, {role:"user", content:q}]);
     setAiLoading(true);
-    const ctx = `You are a business intelligence assistant for Two Guys Energy Solutions, a home services company in Boise, Idaho. Completed jobs data: ${JSON.stringify(jobs)}. Upcoming appointments: ${JSON.stringify(futureAppointments)}. Metrics: total jobs=${jobs.length}, revenue=${fmt(totalRevenue)}, avg ticket=${fmt(avgTicket)}, customers=${uniqueCustomers}, upcoming this week=${thisWeekAppointments.length}, projected week revenue=${fmt(projectedWeekRevenue)}. Answer under 150 words with specific numbers.`;
+    const ctx = `You are a business intelligence assistant for Two Guys Energy Solutions, a home services company in Boise, Idaho. Active time period filter: ${periodRange.label}. Completed jobs in this period: ${JSON.stringify(periodJobs)}. Upcoming appointments: ${JSON.stringify(allFutureAppointments)}. Metrics for ${periodRange.label}: total jobs=${periodJobs.length}, revenue=${fmt(totalRevenue)}, avg ticket=${fmt(avgTicket)}, customers=${uniqueCustomers}. Note: "Is Estimated: true" means the value is based on historical averages, not a confirmed price. Answer under 150 words with specific numbers.`;
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST", headers:{"Content-Type":"application/json"},
@@ -124,7 +204,22 @@ export default function App() {
   const rowStyle = {display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #2a3545"};
   const pad = isMobile ? "12px" : "24px";
 
+  const periodSelectStyle = {
+    background: periodActive ? "#1e3a2f" : "#1e2535",
+    border: periodActive ? "1px solid #22c55e" : "1px solid #2a3545",
+    borderRadius: 8,
+    padding: "6px 10px",
+    color: periodActive ? "#22c55e" : "#e2e8f0",
+    fontSize: 12,
+    fontFamily: "inherit",
+    cursor: "pointer",
+    outline: "none",
+    fontWeight: periodActive ? 500 : 400,
+  };
+
   const TABS = ["overview","jobs","upcoming","sources","services","customers","ai insights"];
+
+  const periodSubtitle = period === "all" ? "all time" : periodRange.label.toLowerCase();
 
   if (loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:12,fontFamily:"system-ui",background:"#0f1117",color:"#e2e8f0"}}>
@@ -138,20 +233,36 @@ export default function App() {
   return (
     <div style={{fontFamily:"system-ui,sans-serif",background:"#0f1117",minHeight:"100vh",color:"#e2e8f0"}}>
       <div style={{background:"#0a0d14",borderBottom:"1px solid #1e2535",padding:`12px ${pad}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
           <div style={{width:32,height:32,background:"#22c55e",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🌿</div>
-          <div>
+          <div style={{minWidth:0}}>
             <div style={{fontWeight:600,fontSize:isMobile?14:16,color:"#f1f5f9"}}>LeadGround</div>
             {!isMobile && <div style={{fontSize:10,color:"#64748b",letterSpacing:"0.06em"}}>TWO GUYS ENERGY SOLUTIONS</div>}
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          <select value={period} onChange={e=>setPeriod(e.target.value)} style={periodSelectStyle} title="Filter all metrics by time period">
+            <option value="all">All Time</option>
+            <option value="week">This Week</option>
+            <option value="month">This Month</option>
+            <option value="quarter">This Quarter</option>
+          </select>
           {lastSync && !isMobile && <span style={{fontSize:11,color:"#64748b"}}>Updated {lastSync.toLocaleTimeString()}</span>}
           <button onClick={fetchData} style={{...ghostStyle,fontSize:11,padding:"6px 10px"}}>↻ {isMobile?"":"Refresh"}</button>
         </div>
       </div>
 
       {syncError && <div style={{background:"#ef444422",padding:"8px 20px",fontSize:12,color:"#ef4444"}}>{syncError}</div>}
+
+      {periodActive && (
+        <div style={{background:"#1e3a2f22",borderBottom:"1px solid #22c55e22",padding:`6px ${pad}`,fontSize:11,color:"#22c55e",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+          <span>
+            📅 Filtered to <strong>{periodRange.label}</strong>
+            {daysIn && <span style={{color:"#64748b",marginLeft:8}}>· day {daysIn} of period</span>}
+          </span>
+          <button onClick={()=>setPeriod("all")} style={{background:"none",border:"none",color:"#22c55e",fontSize:11,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>Clear filter</button>
+        </div>
+      )}
 
       <div style={{background:"#0a0d14",borderBottom:"1px solid #1e2535",display:"flex",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
         {TABS.map(t => (
@@ -167,10 +278,10 @@ export default function App() {
           <div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
               {[
-                {label:"Total Jobs",val:jobs.length,sub:"completed",color:"#3b82f6"},
-                {label:"Total Revenue",val:fmt(totalRevenue),sub:"all time",color:"#22c55e"},
+                {label:"Total Jobs",val:periodJobs.length,sub:periodSubtitle,color:"#3b82f6"},
+                {label:"Total Revenue",val:fmt(totalRevenue),sub:periodSubtitle,color:"#22c55e"},
                 {label:"Avg Ticket",val:fmt(avgTicket),sub:"per job",color:"#8b5cf6"},
-                {label:"Customers",val:uniqueCustomers,sub:"unique",color:"#f59e0b"},
+                {label:"Customers",val:uniqueCustomers,sub:period==="all"?"unique":"in period",color:"#f59e0b"},
               ].map(({label,val,sub,color})=>(
                 <div key={label} style={cardStyle}>
                   <div style={lblStyle}>{label}</div>
@@ -180,42 +291,64 @@ export default function App() {
               ))}
             </div>
 
-            {/* Upcoming this week summary card */}
-            <div style={{...cardStyle, marginBottom:14, cursor:"pointer"}} onClick={()=>setTab("upcoming")}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:isMobile?"flex-start":"center",flexDirection:isMobile?"column":"row",gap:isMobile?10:20}}>
-                <div>
-                  <div style={lblStyle}>Upcoming This Week</div>
-                  <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap"}}>
-                    <div>
-                      <span style={{fontSize:isMobile?22:26,fontWeight:600,color:"#f59e0b"}}>{thisWeekAppointments.length}</span>
-                      <span style={{fontSize:12,color:"#64748b",marginLeft:6}}>appointment{thisWeekAppointments.length===1?"":"s"}</span>
+            {(period === "all" || period === "week" || period === "month") && (
+              <div style={{...cardStyle, marginBottom:14, cursor:"pointer"}} onClick={()=>setTab("upcoming")}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:isMobile?"flex-start":"center",flexDirection:isMobile?"column":"row",gap:isMobile?10:20}}>
+                  <div>
+                    <div style={lblStyle}>
+                      {period === "month" ? "Upcoming This Month" : "Upcoming This Week"}
                     </div>
-                    <div style={{color:"#64748b"}}>·</div>
-                    <div>
-                      <span style={{fontSize:isMobile?18:22,fontWeight:500,color:"#22c55e"}}>{fmt(projectedWeekRevenue)}</span>
-                      <span style={{fontSize:12,color:"#64748b",marginLeft:6}}>projected</span>
+                    <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap"}}>
+                      <div>
+                        <span style={{fontSize:isMobile?22:26,fontWeight:600,color:"#f59e0b"}}>
+                          {period === "month" ? thisMonthAppointments.length : thisWeekAppointments.length}
+                        </span>
+                        <span style={{fontSize:12,color:"#64748b",marginLeft:6}}>
+                          appointment{(period === "month" ? thisMonthAppointments.length : thisWeekAppointments.length)===1?"":"s"}
+                        </span>
+                      </div>
+                      <div style={{color:"#64748b"}}>·</div>
+                      <div>
+                        <span style={{fontSize:isMobile?18:22,fontWeight:500,color:"#22c55e"}}>
+                          {(period === "month" ? monthHasEstimates : weekHasEstimates) ? "~" : ""}
+                          {fmt(period === "month" ? projectedMonthRevenue : projectedWeekRevenue)}
+                        </span>
+                        <span style={{fontSize:12,color:"#64748b",marginLeft:6}}>
+                          {(period === "month" ? monthHasEstimates : weekHasEstimates) ? "est. projected" : "projected"}
+                        </span>
+                      </div>
                     </div>
                   </div>
+                  {(period === "month" ? thisMonthAppointments.length : thisWeekAppointments.length) > 0 && (
+                    <div style={{fontSize:11,color:"#94a3b8",textAlign:isMobile?"left":"right"}}>
+                      Next: {(period === "month" ? thisMonthAppointments : thisWeekAppointments)[0]["Customer Name"]} · {fmtDateShort((period === "month" ? thisMonthAppointments : thisWeekAppointments)[0]["Date"])} {(period === "month" ? thisMonthAppointments : thisWeekAppointments)[0]["Time"]||""}
+                    </div>
+                  )}
+                  {(period === "month" ? thisMonthAppointments.length : thisWeekAppointments.length) === 0 && (
+                    <div style={{fontSize:12,color:"#64748b"}}>No appointments scheduled</div>
+                  )}
                 </div>
-                {thisWeekAppointments.length > 0 && (
-                  <div style={{fontSize:11,color:"#94a3b8",textAlign:isMobile?"left":"right"}}>
-                    Next: {thisWeekAppointments[0]["Customer Name"]} · {fmtDateShort(thisWeekAppointments[0]["Date"])} {thisWeekAppointments[0]["Time"]||""}
-                  </div>
-                )}
-                {thisWeekAppointments.length === 0 && (
-                  <div style={{fontSize:12,color:"#64748b"}}>No appointments scheduled</div>
-                )}
+                <div style={{fontSize:10,color:"#64748b",marginTop:10,letterSpacing:"0.06em",textTransform:"uppercase"}}>
+                  Tap to view all upcoming →
+                </div>
               </div>
-              <div style={{fontSize:10,color:"#64748b",marginTop:10,letterSpacing:"0.06em",textTransform:"uppercase"}}>
-                Tap to view all upcoming →
+            )}
+
+            {period === "quarter" && (
+              <div style={{...cardStyle, marginBottom:14, background:"#131825"}}>
+                <div style={{fontSize:12,color:"#94a3b8",textAlign:"center"}}>
+                  ℹ️ Quarterly projections not shown — Square appointments typically extend only 60-90 days out.
+                  <br/>
+                  <span style={{fontSize:11,color:"#64748b"}}>Switch to This Week or This Month to see projected revenue.</span>
+                </div>
               </div>
-            </div>
+            )}
 
             <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
               <div style={cardStyle}>
                 <div style={{...lblStyle,marginBottom:12}}>Revenue by Lead Source</div>
                 {sourceStats.length === 0
-                  ? <div style={{fontSize:13,color:"#64748b"}}>No source data yet</div>
+                  ? <div style={{fontSize:13,color:"#64748b"}}>No source data {periodActive?"in this period":"yet"}</div>
                   : sourceStats.map(({src,jobs:j,revenue,avg})=>(
                     <div key={src} style={rowStyle}>
                       <div style={{flex:1,minWidth:0,marginRight:12}}>
@@ -233,7 +366,7 @@ export default function App() {
               <div style={cardStyle}>
                 <div style={{...lblStyle,marginBottom:12}}>Top Services by Avg Ticket</div>
                 {serviceStats.length === 0
-                  ? <div style={{fontSize:13,color:"#64748b"}}>No service data yet</div>
+                  ? <div style={{fontSize:13,color:"#64748b"}}>No service data {periodActive?"in this period":"yet"}</div>
                   : serviceStats.slice(0,6).map(({svc,jobs:j,avg})=>(
                     <div key={svc} style={rowStyle}>
                       <div style={{flex:1,minWidth:0,marginRight:12}}>
@@ -260,7 +393,7 @@ export default function App() {
                   </select>
                 </div>
               ))}
-              <span style={{fontSize:11,color:"#64748b"}}>{filtered.length} jobs</span>
+              <span style={{fontSize:11,color:"#64748b"}}>{filtered.length} jobs {periodActive && `in ${periodRange.label.toLowerCase()}`}</span>
             </div>
             {isMobile ? (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -277,7 +410,7 @@ export default function App() {
                     </div>
                   </div>
                 ))}
-                {filtered.length === 0 && <div style={{...cardStyle,textAlign:"center",color:"#64748b"}}>No jobs match filters</div>}
+                {filtered.length === 0 && <div style={{...cardStyle,textAlign:"center",color:"#64748b"}}>No jobs match {periodActive?"this period and filters":"filters"}</div>}
               </div>
             ) : (
               <div style={{...cardStyle,padding:0,overflow:"auto"}}>
@@ -301,7 +434,7 @@ export default function App() {
                     ))}
                   </tbody>
                 </table>
-                {filtered.length === 0 && <div style={{padding:24,textAlign:"center",color:"#64748b"}}>No jobs match filters</div>}
+                {filtered.length === 0 && <div style={{padding:24,textAlign:"center",color:"#64748b"}}>No jobs match {periodActive?"this period and filters":"filters"}</div>}
               </div>
             )}
           </div>
@@ -310,11 +443,23 @@ export default function App() {
         {tab === "upcoming" && (
           <div>
             <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-              <span style={{fontSize:11,color:"#64748b"}}>{futureAppointments.length} upcoming · {fmt(futureAppointments.reduce((s,a)=>s+(Number(a["Estimated Value"])||0),0))} projected</span>
+              <span style={{fontSize:11,color:"#64748b"}}>
+                {futureAppointments.length} upcoming{period==="week"||period==="month"?` in ${periodRange.label.toLowerCase()}`:""} · {futureAppointments.some(a=>a["Is Estimated"])?"~":""}{fmt(futureAppointments.reduce((s,a)=>s+(Number(a["Estimated Value"])||0),0))} projected
+              </span>
+              {futureAppointments.some(a=>a["Is Estimated"]) && (
+                <span style={{fontSize:10,color:"#64748b",fontStyle:"italic"}}>
+                  ~ = estimated from historical averages
+                </span>
+              )}
+              {period === "quarter" && (
+                <span style={{fontSize:10,color:"#f59e0b",fontStyle:"italic"}}>
+                  Note: showing all upcoming — Square typically only books 60-90 days out
+                </span>
+              )}
             </div>
             {futureAppointments.length === 0 ? (
               <div style={{...cardStyle,textAlign:"center",padding:48,color:"#64748b"}}>
-                No upcoming appointments.<br/>
+                No upcoming appointments{period==="week"||period==="month"?` in ${periodRange.label.toLowerCase()}`:""}.<br/>
                 <span style={{fontSize:11,marginTop:8,display:"inline-block"}}>New bookings from Square will appear here automatically.</span>
               </div>
             ) : isMobile ? (
@@ -323,7 +468,7 @@ export default function App() {
                   <div key={a["Appointment ID"]||i} style={cardStyle}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
                       <div style={{fontWeight:600,color:"#e2e8f0",fontSize:14}}>{a["Customer Name"]}</div>
-                      <div style={{color:"#22c55e",fontWeight:600,fontSize:15}}>{fmt(a["Estimated Value"])}</div>
+                      <div style={{fontSize:15}}>{renderValue(a, "#22c55e")}</div>
                     </div>
                     <div style={{fontSize:12,color:"#94a3b8",marginBottom:4}}>{a["Service"]}</div>
                     <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#64748b"}}>
@@ -351,7 +496,7 @@ export default function App() {
                         <td style={{padding:"10px 14px",fontWeight:500,color:"#e2e8f0"}}>{a["Customer Name"]}</td>
                         <td style={{padding:"10px 14px",color:"#94a3b8"}}>{a["Service"]}</td>
                         <td style={{padding:"10px 14px",color:"#94a3b8"}}>{a["Lead Source"]||"—"}</td>
-                        <td style={{padding:"10px 14px",color:"#22c55e",fontWeight:500}}>{fmt(a["Estimated Value"])}</td>
+                        <td style={{padding:"10px 14px"}}>{renderValue(a, "#22c55e")}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -364,7 +509,7 @@ export default function App() {
         {tab === "sources" && (
           <div>
             {sourceStats.length === 0
-              ? <div style={{...cardStyle,textAlign:"center",padding:48,color:"#64748b"}}>No source data yet. Assign customers to groups in Square.</div>
+              ? <div style={{...cardStyle,textAlign:"center",padding:48,color:"#64748b"}}>No source data {periodActive?`in ${periodRange.label.toLowerCase()}`:"yet. Assign customers to groups in Square."}</div>
               : <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,minmax(0,1fr))",gap:14}}>
                 {sourceStats.map(({src,jobs:j,revenue,avg})=>{
                   const pct = sourceStats[0].revenue ? Math.round(revenue/sourceStats[0].revenue*100) : 0;
@@ -391,7 +536,7 @@ export default function App() {
         {tab === "services" && (
           <div>
             {serviceStats.length === 0
-              ? <div style={{...cardStyle,textAlign:"center",padding:48,color:"#64748b"}}>No service data yet.</div>
+              ? <div style={{...cardStyle,textAlign:"center",padding:48,color:"#64748b"}}>No service data {periodActive?`in ${periodRange.label.toLowerCase()}`:"yet."}</div>
               : <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,minmax(0,1fr))",gap:14}}>
                 {serviceStats.map(({svc,jobs:j,revenue,avg})=>{
                   const pct = serviceStats[0].avg ? Math.round(avg/serviceStats[0].avg*100) : 0;
@@ -432,14 +577,14 @@ export default function App() {
                     </div>
                   </div>
                 ))}
-                {customerLTV.length === 0 && <div style={{...cardStyle,textAlign:"center",color:"#64748b"}}>No customer data yet</div>}
+                {customerLTV.length === 0 && <div style={{...cardStyle,textAlign:"center",color:"#64748b"}}>No customer data {periodActive?`in ${periodRange.label.toLowerCase()}`:"yet"}</div>}
               </div>
             ) : (
               <div style={{...cardStyle,padding:0,overflow:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{borderBottom:"1px solid #2a3545"}}>
-                      {["Customer","Lead Source","Jobs","Last Service","Last Date","Total LTV"].map(h=>(
+                      {["Customer","Lead Source","Jobs","Last Service","Last Date",periodActive?"Period Revenue":"Total LTV"].map(h=>(
                         <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,color:"#64748b",letterSpacing:"0.07em",textTransform:"uppercase",fontWeight:500,whiteSpace:"nowrap"}}>{h}</th>
                       ))}
                     </tr>
@@ -457,7 +602,7 @@ export default function App() {
                     ))}
                   </tbody>
                 </table>
-                {customerLTV.length === 0 && <div style={{padding:24,textAlign:"center",color:"#64748b"}}>No customer data yet</div>}
+                {customerLTV.length === 0 && <div style={{padding:24,textAlign:"center",color:"#64748b"}}>No customer data {periodActive?`in ${periodRange.label.toLowerCase()}`:"yet"}</div>}
               </div>
             )}
           </div>
@@ -467,7 +612,7 @@ export default function App() {
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 260px",gap:14}}>
             <div style={{...cardStyle,display:"flex",flexDirection:"column",height:isMobile?"70vh":"500px",padding:0}}>
               <div style={{padding:"12px 16px",borderBottom:"1px solid #2a3545",fontSize:10,color:"#64748b",letterSpacing:"0.07em",textTransform:"uppercase"}}>
-                ⚡ AI Insights · {jobs.length} jobs · {futureAppointments.length} upcoming
+                ⚡ AI Insights · {periodJobs.length} jobs{periodActive?` in ${periodRange.label}`:""} · {allFutureAppointments.length} upcoming
               </div>
               <div style={{flex:1,overflowY:"auto",padding:14,display:"flex",flexDirection:"column",gap:12}}>
                 {msgs.map((m,i)=>(
